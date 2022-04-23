@@ -12,20 +12,20 @@
 #
 # Usage:
 #
-#    ./irate.py INITIAL_CREDIT INTEREST_RATE1 RUNTIME1 [INTEREST_RATE2 RUNTIME2]*
+#    ./irate.py INITIAL_CREDIT RESIDUAL_CREDIT INTEREST_RATE1 RUNTIME1 [INTEREST_RATE2 RUNTIME2]*
 #
 # Examples:
 #
 #    # Will spit out 2235.88 Toenails, the monthly rate for which an initial
 #    # credit of 500k toenails on 2.5% anual interest rate is fully
 #    # payed back after 25 years
-#    ./irate.py 500e3   2.5 25
+#    ./irate.py 500e3 0.0   2.5 25
 #
 #    # Will produce 2073.36 Toenails, the monthly rate for which the same
 #    # initial credit of 500k toenails is first financed using a 1.0%
 #    # loan over 5 years, followed by a 2% loan running 10 years and
 #    # finally a 3.5% over the remaining 10 years.
-#    ./irate.py 500e3   1.0 5   2.0 10   3.5 10
+#    ./irate.py 500e3 0.0   1.0 5   2.0 10   3.5 10
 import sys
 
 initialCredit = None
@@ -33,15 +33,16 @@ initialCredit = None
 interestRates = []
 runtimesYears = []
 
-if len(sys.argv) < 4 or (len(sys.argv) - 2)%2 != 0:
+if len(sys.argv) < 4 or (len(sys.argv) - 3)%2 != 0:
     print("Usage:", file=sys.stderr)
     print("", file=sys.stderr)
-    print("  {} INITIAL_CREDIT INTEREST_RATE1 RUNTIME1 [INTEREST_RATE2 RUNTIME2]*".format(sys.argv[0]), file=sys.stderr)
+    print("  {} INITIAL_CREDIT RESIDUAL_CREDIT     INTEREST_RATE1 RUNTIME1   [INTEREST_RATE2 RUNTIME2]*".format(sys.argv[0]), file=sys.stderr)
     sys.exit(1)
 
 initialCredit = float(sys.argv[1])
+targetResidual = float(sys.argv[2])
 
-for i in range(2, len(sys.argv), 2):
+for i in range(3, len(sys.argv), 2):
     interestRates.append(float(sys.argv[i + 0])/100)
     runtimesYears.append(int(sys.argv[i + 1]))
 
@@ -69,19 +70,18 @@ def computeResidual(loanRate):
 totalRuntimeYears = 0
 for y in runtimesYears:
     totalRuntimeYears += y
-rate = initialCredit/(totalRuntimeYears*12)
+rate = (initialCredit - targetResidual)/(totalRuntimeYears*12)
 
 # newton method
-resid = computeResidual(rate)
-while abs(resid) > 1e-3:
-    eps = 1e-1
-    residStar = computeResidual(rate + eps)
+f = computeResidual(rate) - targetResidual
+while abs(f) > 1e-3:
+    eps = 1e-4
+    fStar = computeResidual(rate + eps) - targetResidual
+    fPrime = (fStar - f)/eps
 
-    residPrime = (residStar - resid)/eps
+    rate -= f/fPrime
 
-    rate -= resid/residPrime
-
-    resid = computeResidual(rate)
+    f = computeResidual(rate) - targetResidual
 
 totalPayments = 0.0
 for i, runTimeYears in enumerate(runtimesYears):
@@ -89,8 +89,9 @@ for i, runTimeYears in enumerate(runtimesYears):
 
 
 print("Initial Credit: {:.02f} Toenails".format(initialCredit))
+print("Residual Credit: {:.02f} Toenails".format(targetResidual))
 print("Computed Monthly Rate: {:.02f} Toenails over {} years".format(rate, totalRuntimeYears))
-print("Total Payments: {:.02f} Toenails ({:.02f} % of Initial Credit)".format(totalPayments, 100*totalPayments/initialCredit))
+print("Total Payments: {:.02f} Toenails ({:.02f} % of retired sum)".format(totalPayments, 100*totalPayments/(initialCredit - targetResidual)))
 
 remainingCredit = initialCredit
 passedYears = 0
@@ -98,6 +99,7 @@ for i, runTimeYears in enumerate(runtimesYears):
     prevRemainingCredit = remainingCredit
     remainingCredit = computePartialResidual(rate, remainingCredit, interestRates[i], runtimesYears[i])
 
+    print()
     print("Period {}:".format(i+1))
     print("  Years Remaining at Beginning: {}".format(totalRuntimeYears - passedYears))
     print("  Duration: {} years".format(runtimesYears[i]))  
